@@ -15,6 +15,58 @@ SUBJECTS = {norm(x): x for x in (
     'Informática', 'Raciocínio Lógico', 'Conhecimentos em Direito', 'Conhecimentos Gerais')}
 
 
+def append_line(existing, line):
+    """Reconstitui palavras divididas na mudança de linha, preservando hífens evidentes."""
+    match = re.search(r'([^\W\d_]+)-$', existing, re.UNICODE)
+    start = re.match(r'([a-zà-ú]+)\b', line)
+    if match and start:
+        previous, following = match.group(1), start.group(1)
+        prefixes = {'ex', 'pré', 'pós', 'pró', 'vice', 'anti', 'auto', 'semi', 'super', 'inter', 'intra', 'micro', 'macro', 'não'}
+        clitics = {'me', 'te', 'se', 'nos', 'vos', 'lhe', 'lhes', 'lo', 'la', 'los', 'las'}
+        if previous.lower() not in prefixes and not (following in clitics and (previous.endswith(('r', 's', 'z')) or previous[-1] in 'áéíóúâêôãõ')):
+            return existing[:-1] + line
+        return existing + line
+    return existing + ' ' + line
+
+
+def question_region(xml, number):
+    """Estima a região de uma questão em uma página nativa de PDF."""
+    if not str(number).isdigit():
+        return None
+    try:
+        root = ElementTree.fromstring(xml)
+        ns = {'h': 'http://www.w3.org/1999/xhtml'}
+        page = root.find('.//h:page', ns)
+        width, height = float(page.get('width')), float(page.get('height'))
+        lines = []
+        for line in page.findall('.//h:line', ns):
+            text = ' '.join(''.join(word.itertext()) for word in line.findall('h:word', ns)).strip()
+            x, y = float(line.get('xMin')), float(line.get('yMin'))
+            if text and height * .015 <= y < height * .96:
+                lines.append((x, y, text))
+        left = sum(1 for x, _, _ in lines if x < width * .49)
+        right = sum(1 for x, _, _ in lines if x >= width * .49)
+        two_columns = left >= 4 and right >= 4
+        starts = []
+        for x, y, text in lines:
+            match = re.match(r'^(\d{1,3})\s*[.)]\s+', text)
+            if match:
+                starts.append((int(match.group(1)), x, y))
+        matches = [(x,y) for n,x,y in starts if n == int(number)]
+        if len(matches) != 1:
+            return None
+        x, y = matches[0]
+        right_col = two_columns and x >= width * .49
+        same_column = lambda px: not two_columns or (px >= width * .49) == right_col
+        next_y = min((sy for n,sx,sy in starts if sy > y and same_column(sx)), default=height * .95)
+        if next_y <= y + 4:
+            return None
+        x0, x1 = ((.49, .99) if right_col else (.01, .49)) if two_columns else (.01, .99)
+        return [x0, max(.01, (y - 5) / height), x1, min(.96, (next_y - 3) / height)]
+    except (ElementTree.ParseError, AttributeError, ValueError, TypeError):
+        return None
+
+
 def page_lines(xml):
     xml = re.sub(rb'[\x00-\x08\x0b\x0c\x0e-\x1f]', b'', xml)
     root = ElementTree.fromstring(xml)
@@ -46,21 +98,29 @@ def extract_candidates(xml):
     def finish():
         nonlocal current
         if not current: return
-        if len(current['options']) >= 2 and current['prompt'].strip():
+        if current['options'] and current['prompt'].strip():
             current['prompt'] = current['prompt'].strip()
-            current['options'] = [x.strip() for x in current['options']]
+            current['options'] = [re.sub(r'\s+R\s+A\s+S\s+C\s+U\s+N\s+H\s+O\s*$', '', x, flags=re.I).strip() for x in current['options']]
             current['warnings'] = ['Rascunho automático: revise enunciado, alternativas, matéria e contexto no PDF original.', 'Imagens e textos de apoio podem não ter sido extraídos.']
             if len(current['options']) != 5: current['warnings'].append('Quantidade de alternativas incomum ou incompleta.')
+            if any(not option for option in current['options']): current['warnings'].append('Alternativas sem texto: podem conter imagens; confira a página original. Não publique sem completar as alternativas.')
             candidates.append(current)
         current = None
     for page_no, lines in enumerate(page_lines(xml), 1):
         for line in lines:
             clean = line.strip()
+            if re.fullmatch(r'R\s*A\s*S\s*C\s*U\s*N\s*H\s*O', clean, re.I):
+                continue
             n = norm(clean)
             if n in SUBJECTS:
-                subject = SUBJECTS[n]; continue
+                subject = SUBJECTS[n]
+                if current is None:
+                    pending_context, context_page = [], None
+                continue
             # Cabeçalhos ou textos de apoio após as opções não devem ser fundidos à última alternativa.
             qmatch = re.match(r'^(\d{1,3})\s*[.)]\s+(.+)$', clean)
+            if qmatch and re.match(r'^prova\s+objetiva\b', qmatch.group(2), re.I):
+                continue
             if qmatch and 1 <= int(qmatch.group(1)) <= 200:
                 finish()
                 number = int(qmatch.group(1))
@@ -75,7 +135,7 @@ def extract_candidates(xml):
                 pending_context = []
                 context_page = None
                 continue
-            option = re.match(r'^\(?([A-E])\)\s*(.+)$', clean)
+            option = re.match(r'^\(?([A-E])\)\s*(.*)$', clean)
             if current and option:
                 letter = ord(option.group(1)) - 65
                 if letter == len(current['options']):
@@ -85,9 +145,9 @@ def extract_candidates(xml):
                     if not pending_context: context_page = page_no
                     pending_context.append(clean)
                 elif current['options']:
-                    current['options'][-1] += ' ' + clean
+                    current['options'][-1] = append_line(current['options'][-1], clean)
                 else:
-                    current['prompt'] += ' ' + clean
+                    current['prompt'] = append_line(current['prompt'], clean)
             elif clean:
                 if not pending_context: context_page = page_no
                 pending_context.append(clean)

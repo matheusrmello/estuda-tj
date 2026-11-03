@@ -1,0 +1,8 @@
+.git
+.codex
+.agents
+backend/data
+**/__pycache__
+**/*.pyc
+.env
+.env.*

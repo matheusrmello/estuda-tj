@@ -38,6 +38,16 @@ class Flow(unittest.TestCase):
         response = conn.getresponse(); result = (response.status, json.loads(response.read()))
         conn.close(); return result
 
+    def test_answer_key_upload_remains_separate(self):
+        status, doc = self.request('POST', '/api/documents', simple_pdf(), {'Content-Type': 'application/pdf', 'X-Document-Kind': 'gabarito'})
+        self.assertEqual(status, 201)
+        self.assertEqual(doc['source_info']['kind'], 'gabarito')
+        self.assertEqual(self.request('GET', f"/api/documents/{doc['id']}/drafts")[1], [])
+        status, result = self.request('GET', f"/api/documents/{doc['id']}/answer-keys")
+        self.assertEqual(status, 200)
+        self.assertFalse(result['matched'])
+        self.assertEqual(result['versions'], {})
+
     def test_import_review_answer(self):
         status, document = self.request('POST', '/api/documents', simple_pdf(), {'Content-Type': 'application/pdf', 'X-Filename': 'prova.pdf'})
         self.assertEqual(status, 201); self.assertEqual(document['status'], 'em_revisao')
@@ -66,6 +76,17 @@ class Flow(unittest.TestCase):
         self.assertTrue(image.startswith(b'\x89PNG\r\n\x1a\n'))
         conn.close()
         self.assertEqual(self.request('GET', '/api/documents/%d/pages/2.png' % doc['id'])[0], 404)
+
+    def test_question_excerpt_is_returned_as_image(self):
+        _, doc = self.request('POST', '/api/documents', simple_pdf(), {'Content-Type':'application/pdf'})
+        payload = {'document_id':doc['id'],'page':1,'number':'1','subject':'Teste','prompt':'Pergunta','options':['Sim','Não'],'answer':None}
+        _, question = self.request('POST','/api/questions',json.dumps(payload),{'Content-Type':'application/json'})
+        with patch.object(server, 'question_region', return_value=[.1,.1,.8,.7]):
+            conn = http.client.HTTPConnection('127.0.0.1', self.httpd.server_port)
+            conn.request('GET',f"/api/questions/{question['id']}/excerpt.png")
+            response = conn.getresponse(); image=response.read(); conn.close()
+            self.assertEqual(response.status,200)
+            self.assertTrue(image.startswith(b'\x89PNG\r\n\x1a\n'))
 
     def test_illustration_is_bound_to_pdf_and_question(self):
         status, doc = self.request('POST', '/api/documents', simple_pdf(), {'Content-Type': 'application/pdf'})
