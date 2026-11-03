@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>EstudaTJ — Plataforma de estudos</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><strong>EstudaTJ</strong><span>TJ-SP Escrevente</span></div>
+      <nav aria-label="Navegação principal">
+        <button class="nav active" data-view="dashboard"><span aria-hidden="true">⌂</span> Dashboard</button>
+        <button class="nav" data-view="questions"><span aria-hidden="true">▤</span> Questões</button>
+        <button class="nav" data-view="imports"><span aria-hidden="true">⇧</span> Importações</button>
+        <button class="nav" data-view="settings"><span aria-hidden="true">⚙</span> Configurações</button>
+      </nav>
+      <div class="sidebar-note"><strong>Seu foco.<br>Sua preparação.</strong><span>Estude no seu ritmo</span></div>
+    </aside>
+    <main>
+      <header class="topbar"><div><p class="eyebrow">Seu espaço de estudos</p><h1>Plataforma de Estudos – TJ-SP Escrevente</h1></div><button class="primary" data-go="questions">Praticar questões <span aria-hidden="true">→</span></button></header>
+      <div id="notice" role="status" aria-live="polite"></div>
+      <section id="dashboard" class="view" aria-labelledby="dashboard-title">
+        <div class="section-heading"><div><p class="eyebrow">Visão geral</p><h2 id="dashboard-title">Seu painel de estudos</h2></div></div>
+        <div class="metrics">
+          <article class="metric"><span class="metric-icon blue" aria-hidden="true">▤</span><div><p>Questões disponíveis</p><strong id="metric-questions">—</strong><small>revisadas e prontas para estudo</small></div></article>
+          <article class="metric"><span class="metric-icon green" aria-hidden="true">✓</span><div><p>Questões respondidas</p><strong id="metric-attempts">—</strong><small>tentativas registradas</small></div></article>
+          <article class="metric"><span class="metric-icon violet" aria-hidden="true">◔</span><div><p>Aproveitamento</p><strong id="metric-accuracy">—</strong><small>com base nas respostas registradas</small></div></article>
+        </div>
+        <div class="dashboard-grid">
+          <article class="card continue"><div class="card-title"><h3>▣ &nbsp;Continue estudando</h3><button class="text-button" data-go="questions">Ver questões →</button></div><div class="continue-body"><div class="book-illustration" aria-hidden="true">✦<br>▤</div><div><span class="tag">Sua preparação</span><h3>Um passo de cada vez</h3><p>Pratique com questões revisadas e acompanhe seu progresso.</p><button class="primary" data-go="questions">Continuar sessão →</button></div></div></article>
+          <article class="card"><div class="card-title"><h3>▤ &nbsp;Comece por aqui</h3></div><p class="muted">Adicione uma prova em PDF para preparar suas questões de estudo.</p><button class="secondary" data-go="imports">Importar prova →</button></article>
+          <article class="card"><div class="card-title"><h3>▥ &nbsp;Seu desempenho</h3></div><div id="dashboard-summary" class="empty">Seus resultados aparecerão aqui depois da primeira resposta.</div></article>
+          <article class="card"><div class="card-title"><h3>◎ &nbsp;Meta diária</h3><button class="text-button" data-go="settings">Ajustar meta →</button></div><div id="daily-summary" class="empty">Carregando meta…</div></article>
+        </div>
+      </section>
+      <section id="questions" class="view" aria-labelledby="questions-title" hidden>
+        <div class="section-heading"><div><p class="eyebrow">Prática</p><h2 id="questions-title">Questões</h2><p class="muted">Responda questões revisadas e acompanhe seu progresso.</p></div><button class="secondary" data-go="imports">Importar PDF</button></div>
+        <div class="study-layout"><aside class="card study-sidebar"><h3>Seu percurso</h3><label for="subject-filter">Filtrar por matéria</label><select id="subject-filter"><option value="">Todas as matérias</option></select><p id="study-count" class="muted"></p><div id="question-list" class="question-list"></div></aside><div id="question-content" class="card"><p class="muted">Carregando questões…</p></div></div>
+      </section>
+      <section id="imports" class="view" aria-labelledby="imports-title" hidden>
+        <div class="section-heading"><div><p class="eyebrow">Sua biblioteca</p><h2 id="imports-title">Importar e revisar</h2><p class="muted">Adicione uma prova e confira os dados extraídos antes de usá-los.</p></div></div>
+        <div class="imports-grid"><article class="card"><h3>Adicionar documento</h3><p class="muted">Selecione um PDF de prova. A extração precisa de revisão antes da publicação.</p><form id="upload-form"><label for="pdf">Arquivo PDF</label><input id="pdf" name="file" type="file" accept="application/pdf,.pdf" required><label class="ocr-consent"><input id="enable-ocr" type="checkbox"><span>Usar OCR da OpenAI em páginas digitalizadas sem texto. Requer ativação e configuração no servidor. As imagens dessas páginas serão enviadas à OpenAI e podem gerar custos.</span></label><button class="primary" type="submit">Enviar PDF</button></form></article><article class="card"><h3>Documentos importados</h3><div id="import-list" class="empty">Carregando documentos…</div></article></div>
+        <div id="review-content"></div>
+      </section>
+      <section id="settings" class="view" aria-labelledby="settings-title" hidden>
+        <div class="section-heading"><div><p class="eyebrow">Seu espaço</p><h2 id="settings-title">Configurações</h2><p class="muted">Ajuste a tutoria e sua rotina de estudos.</p></div></div>
+        <form id="settings-form" class="settings-layout" autocomplete="off">
+          <article class="card settings-card">
+            <h3>Tutoria com IA</h3>
+            <p class="muted">Ao solicitar uma explicação, a questão e sua pergunta serão enviadas ao provedor selecionado e poderão gerar custos. Revise as respostas e suas fontes.</p>
+            <label for="ai-provider">Provedor da tutoria</label>
+            <select id="ai-provider" name="ai_provider"><option value="none">Desativada</option><option value="deepseek">DeepSeek</option></select>
+            <label for="deepseek-model">Modelo DeepSeek</label>
+            <input id="deepseek-model" name="deepseek_model" type="text" maxlength="120" spellcheck="false" autocomplete="off" placeholder="Identificador do modelo">
+            <label for="deepseek-key">Chave da API DeepSeek</label>
+            <input id="deepseek-key" name="deepseek_api_key" type="password" maxlength="512" autocomplete="new-password" spellcheck="false" aria-describedby="key-state">
+            <p id="key-state" class="field-note">A chave fica apenas na memória do servidor e não é exibida. Ao reiniciar, será necessário informá-la novamente. Deixe em branco para mantê-la nesta sessão.</p>
+            <label class="confirmation"><input id="clear-deepseek-key" name="clear_deepseek_api_key" type="checkbox"><span>Remover chave salva</span></label>
+            <p class="field-note">O OCR da OpenAI tem configuração própria no servidor e não é alterado aqui.</p>
+          </article>
+          <article class="card settings-card">
+            <h3>Rotina de estudo</h3>
+            <label for="daily-goal">Meta diária de respostas</label>
+            <input id="daily-goal" name="daily_goal" type="number" min="0" max="1000" required>
+            <p class="field-note">Acompanhe no painel quantas respostas você registrou hoje. Use 0 para desativar a meta.</p>
+          </article>
+          <div class="settings-actions"><button class="primary" type="submit">Salvar configurações</button></div>
+        </form>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

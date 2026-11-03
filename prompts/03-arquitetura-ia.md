@@ -1,0 +1,3 @@
+# Prompt 3 — arquitetura e IA
+
+> Refine `docs/02-arquitetura.md` e `docs/04-qualidade-ia.md`. Compare alternativas de stack, incluindo as hipóteses React/TypeScript/PWA e Go, sem tratá-las como aprovadas. Planeje extração de PDF, OCR quando necessário, revisão humana, versões de gabarito, autenticação, privacidade, backups, custos e falhas. Defina avaliação com conjunto representativo, métricas e critérios de passagem propostos, sem inventar resultados. Use exclusivamente modelos OpenAI sem Astra e diferencie escolhas para desenvolvimento das escolhas para o produto. Registre decisões e limitações; não implemente.

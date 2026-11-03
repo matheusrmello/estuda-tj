@@ -1,0 +1,3 @@
+# Prompt 1 — fontes e recorte
+
+> Pesquise o edital e as retificações oficiais pertinentes ao concurso de Escrevente TJ-SP escolhido, mas não presuma a edição ou região. Caso não estejam definidos, registre a dúvida e trabalhe em um inventário de fontes candidatas. Identifique órgão, edição, URL, data, página/item, retificações e data de consulta em `docs/00-fontes-e-decisoes.md`. Distinga o que foi lido integralmente do que precisa de verificação. Não copie provas sem avaliar direitos nem faça afirmações de edital futuro com base em edital histórico. Documente perguntas necessárias e consequências para o produto; não implemente.

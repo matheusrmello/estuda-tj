@@ -1,0 +1,3 @@
+# Prompt 5 — revisão final do planejamento
+
+> Peça explicitamente a subagentes de revisão independentes que examinem, em paralelo, produto/domínio, arquitetura/IA e design/fontes; limite a três subagentes e peça relatórios sem edição simultânea. Integre resultados, verifique links e consistência, atualize `docs/06-roadmap.md` e o registro de decisões, e apresente lacunas, riscos, dependências, prioridades e critérios de aceitação. Identifique afirmações sem fonte e substitua-as por pendências. Termine com as decisões do usuário necessárias antes de implementar. Não escreva código nem faça deploy.
