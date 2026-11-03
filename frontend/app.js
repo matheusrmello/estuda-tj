@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (selector, root = document) => root.querySelector(selector);
-const state = { questions: [], attempts: [], documents: [], settings: null, currentQuestion: 0, subject: '' };
+const state = { questions: [], attempts: [], documents: [], jobs: [], settings: null, currentQuestion: 0, subject: '' };
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -30,7 +30,8 @@ function showView(name) {
   }
   notice('');
   if (name === 'questions') renderQuestion();
-  if (name === 'imports') renderImports();
+  if (name === 'simulations') loadSimulations().catch(error => notice(error.message, true));
+  if (name === 'imports') { renderImports(); loadCatalog(); }
   if (name === 'settings') loadSettings().catch(error => notice(`Não foi possível carregar as configurações: ${error.message}`, true));
 }
 function renderDashboard() {
@@ -96,14 +97,56 @@ function renderImports() {
   if (!state.documents.length) { list.textContent = 'Nenhum documento importado ainda.'; return; }
   for (const doc of state.documents) {
     const row = element('div', undefined, 'file-row');
-    const info = element('div'); info.append(element('strong', doc.filename), element('small', `Estado: ${doc.status || 'em revisão'}`));
+    const job = state.jobs.find(item => item.document_id === doc.id);
+    const info = element('div'); info.append(element('strong', doc.filename), element('small', `Estado: ${job?.status || doc.status || 'em revisão'}`));
+    if (job) info.append(element('small', `IA: ${job.status} · ${job.done}/${job.total} páginas${job.error ? ` · ${job.error}` : ''}`));
+    if (job && (job.status === 'falhou' || job.status === 'interrompido' || (job.status === 'parcial' && job.error.includes('Falhas:')))) {
+      const retry = element('button', 'Retomar páginas pendentes', 'secondary'); retry.type = 'button';
+      retry.addEventListener('click', async () => { retry.disabled = true; try { await api(`/api/documents/${encodeURIComponent(doc.id)}/resume-import`, {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); await refresh(); monitorImport(doc.id); } catch(error) { retry.disabled = false; notice(error.message, true); } });
+      info.append(retry);
+    }
+    if (doc.source_info?.url) { const source = element('a', 'Fonte oficial ↗', 'source-link'); source.href = doc.source_info.url; source.target = '_blank'; source.rel = 'noopener noreferrer'; info.append(source); }
     const pages = Array.isArray(doc.pages) ? doc.pages : [];
     const needsReview = pages.filter(page => ['nao_solicitado', 'configuracao_ausente', 'modelo_proibido', 'sem_texto', 'indisponivel', 'idioma_indisponivel', 'falhou', 'limite_excedido'].includes(page.ocr_status)).length;
-    if (needsReview) info.append(element('small', `${needsReview} ${needsReview === 1 ? 'página precisa' : 'páginas precisam'} de atenção na extração.`));
-    const button = element('button', 'Revisar', 'secondary'); button.type = 'button';
-    button.addEventListener('click', () => openReview(doc.id));
+    if (needsReview && !job) info.append(element('small', `${needsReview} ${needsReview === 1 ? 'página precisa' : 'páginas precisam'} de atenção na extração.`));
+    const button = doc.source_info?.kind === 'gabarito' ? element('a', 'Abrir gabarito', 'secondary') : element('button', 'Revisar', 'secondary');
+    if (doc.source_info?.kind === 'gabarito') { button.href = `/api/documents/${encodeURIComponent(doc.id)}/pdf`; button.target = '_blank'; button.rel = 'noopener noreferrer'; const show = element('button', 'Ver versões', 'secondary'); show.type = 'button'; show.addEventListener('click', () => showAnswerKey(doc.id)); info.append(show); }
+    else { button.type = 'button'; button.addEventListener('click', () => openReview(doc.id)); }
     row.append(info, button); list.append(row);
   }
+}
+async function showAnswerKey(id) {
+  const target = $('#answer-key-result'); target.replaceChildren(element('p', 'Lendo gabarito…'));
+  try {
+    const data = await api(`/api/documents/${encodeURIComponent(id)}/answer-keys`);
+    const versions = Object.entries(data.versions); target.replaceChildren();
+    if (!versions.length) { target.append(element('p', 'Nenhuma versão identificada. Confira o PDF original.', 'field-note')); return; }
+    target.append(element('p', 'Versões detectadas; a correspondência com a prova ainda não foi comprovada. Nenhuma resposta foi aplicada.', 'field-note'));
+    for (const [name, version] of versions) target.append(element('p', `Versão ${name}: ${Object.keys(version.answers).length} respostas · páginas ${version.pages.join(', ')}${version.conflicts.length ? ` · conflitos: ${version.conflicts.join(', ')}` : ''}`));
+  } catch (error) { target.replaceChildren(element('p', error.message, 'error')); }
+}
+async function loadCatalog() {
+  const container = $('#online-catalog'); container.replaceChildren(element('p', 'Carregando catálogo…', 'muted'));
+  try {
+    const entries = await api('/api/catalog'); container.replaceChildren();
+    if (!entries.length) { container.append(element('p', 'Nenhuma prova disponível no catálogo.', 'muted')); return; }
+    for (const entry of entries) {
+      const card = element('div', undefined, 'file-row'); const description = element('div');
+      description.append(element('strong', entry.title), element('p', entry.description, 'muted'));
+      const source = element('a', 'Ver concurso na Vunesp ↗', 'source-link'); source.href = entry.contest_url; source.target = '_blank'; source.rel = 'noopener noreferrer'; description.append(source);
+      for (const [label, url] of [['Abrir prova oficial ↗', entry.exam_url], ['Abrir gabarito oficial ↗', entry.answer_url]]) { const link = element('a', label, 'source-link'); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; description.append(link); }
+      const button = element('button', 'Buscar prova e gabarito', 'secondary'); button.type = 'button';
+      button.addEventListener('click', async () => {
+        button.disabled = true; notice('Buscando documentos na fonte oficial…');
+        try { const result = await api('/api/catalog/import', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:entry.id})}); await refresh(); await openReview(result.exam.id); notice(`Documentos recebidos. ${result.warning}`); }
+        catch(error) {
+          const refused = /403|recusou/i.test(error.message);
+          notice(refused ? 'A Vunesp recusou a busca automática. O login pode ser necessário, mas o motivo não foi confirmado. Entre na Vunesp, baixe o PDF e envie-o abaixo.' : `Não foi possível buscar os documentos: ${error.message}`, true);
+        } finally { button.disabled = false; }
+      });
+      card.append(description, button); container.append(card);
+    }
+  } catch(error) { container.replaceChildren(element('p', `Catálogo indisponível: ${error.message}`, 'error')); }
 }
 function inputField(labelText, name, required = true, value = '') {
   const wrapper = element('label', labelText); const input = element('input');
@@ -118,6 +161,44 @@ async function openReview(id) {
     const card = element('article', undefined, 'card review-card');
     card.append(element('h3', `Revisar: ${doc.filename}`), element('p', 'As questões extraídas são sugestões. Confira o PDF original, inclusive imagens e textos de apoio, antes de publicar.', 'muted'));
     const pages = Array.isArray(doc.pages) ? doc.pages : [];
+    const pendingDrafts = drafts.filter(d => d.status === 'em_revisao');
+    if (pendingDrafts.length) {
+      const checked = pendingDrafts.filter(d => d.batch_review?.status === 'sem_alerta');
+      const flagged = pendingDrafts.filter(d => d.batch_review?.status === 'atencao');
+      const remaining = pendingDrafts.filter(d => !d.batch_review);
+      const batch = element('section', undefined, 'ocr-batch');
+      batch.append(element('h3', 'Conferência em lote'), element('p', `${checked.length} sem alerta · ${flagged.length} precisam de atenção · ${remaining.length} ainda não conferidas.`), element('p', 'A conferência visual envia páginas e rascunhos à DeepSeek e pode gerar custos. A IA pode não identificar todos os erros; sem alerta não significa gabarito confirmado. Salve edições antes de começar.', 'muted'));
+      const numbers = new Set(drafts.filter(d => /^\d+$/.test(String(d.number))).map(d => Number(d.number)));
+      const maxNumber = numbers.size ? Math.max(...numbers) : 0;
+      const missing = Array.from({length: Math.min(maxNumber, 200)}, (_, i) => i + 1).filter(n => !numbers.has(n));
+      if (missing.length) batch.append(element('p', `Possíveis questões não identificadas: ${missing.join(', ')}. Confira a numeração no PDF.`, 'error'));
+      batch.append(element('p', 'A quantidade total de questões não é verificada automaticamente; confira se todas foram identificadas.', 'muted'));
+      const progress = element('p', '', 'muted'); progress.setAttribute('role', 'status'); batch.append(progress);
+      const run = element('button', 'Conferir páginas pendentes com IA', 'secondary'); run.type = 'button'; run.disabled = !remaining.length;
+      run.addEventListener('click', async () => {
+        run.disabled = true;
+        const pageNumbers = [...new Set(remaining.map(d => d.page))].sort((a,b) => a-b);
+        try {
+          for (let i=0; i<pageNumbers.length; i++) {
+            progress.textContent = `Conferindo página ${pageNumbers[i]} (${i+1} de ${pageNumbers.length})…`;
+            await api(`/api/documents/${encodeURIComponent(id)}/batch-review`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({confirm:true,page:pageNumbers[i]})});
+          }
+          await openReview(id); notice('Conferência concluída. Examine os alertas antes de publicar.');
+        } catch(error) { await openReview(id); notice(`Conferência interrompida: ${error.message}. O progresso anterior foi preservado.`, true); }
+      });
+      const publish = element('button', `Publicar ${checked.length} sem alerta`, 'secondary'); publish.type = 'button'; publish.disabled = !checked.length;
+      publish.addEventListener('click', async () => {
+        publish.disabled = true;
+        try { const result = await api(`/api/documents/${encodeURIComponent(id)}/batch-publish`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:true})}); await refresh(); await openReview(id); notice(`${result.published} questões publicadas com conferência automática e sem gabarito.`); }
+        catch(error) { notice(error.message, true); publish.disabled = false; }
+      });
+      batch.append(run, publish);
+      if (flagged.length) {
+        const summary = element('details'); summary.append(element('summary', `Ver ${flagged.length} questões que precisam de atenção`));
+        const list = element('ul'); for (const d of flagged) list.append(element('li', `Questão ${d.number} · página ${d.page}: ${(d.batch_review.reasons || []).join(' ')}`)); summary.append(list); batch.append(summary);
+      }
+      card.append(batch);
+    }
     const pendingOcr = pages.filter(pageNeedsOcr).length;
     if (pendingOcr) {
       const section = element('div', undefined, 'ocr-batch');
@@ -135,7 +216,8 @@ async function openReview(id) {
     const draftLabel = element('label', 'Questão identificada'); const draftSelector = element('select');
     const manual = element('option', 'Nova questão manual'); manual.value = ''; draftSelector.append(manual);
     for (const draft of drafts) {
-      const option = element('option', `Questão ${draft.number} · página ${draft.page} · ${draft.status === 'published' || draft.status === 'publicada' ? 'publicada' : 'revisar'}`);
+      const reviewLabel = draft.batch_review?.status === 'sem_alerta' ? 'sem alerta' : draft.batch_review?.status === 'atencao' ? 'atenção' : 'revisar';
+      const option = element('option', `Questão ${draft.number} · página ${draft.page} · ${draft.status === 'published' || draft.status === 'publicada' ? 'publicada' : reviewLabel}`);
       option.value = String(draft.id); draftSelector.append(option);
     }
     draftLabel.append(draftSelector); card.append(draftLabel);
@@ -186,6 +268,7 @@ async function openReview(id) {
       (draft.options || []).slice(0, 5).forEach((option, i) => { form.elements[`option${i}`].value = option; });
       const notices = Array.isArray(draft.warnings) ? draft.warnings : [];
       if (notices.length) warnings.append(element('strong', 'Pontos para conferir'), ...notices.map(w => element('p', String(w))));
+      if (draft.batch_review) warnings.append(element('p', `Conferência automática: ${draft.batch_review.status === 'sem_alerta' ? 'sem alerta' : (draft.batch_review.reasons || []).join(' ')}`));
       const published = draft.status === 'published' || draft.status === 'publicada';
       if (published) warnings.append(element('p', 'Esta questão já foi publicada.'));
       save.disabled = published;
@@ -230,21 +313,30 @@ function renderQuestion() {
   const q = questions[state.currentQuestion];
   const wrapper = element('div', undefined, 'question');
   wrapper.append(element('span', `${q.subject || 'Questão'} · ${state.currentQuestion + 1} de ${questions.length}`, 'tag'), element('p', `Questão ${q.number} · documento ${q.document_id} · página ${q.page}`, 'muted'));
+  if (q.review_method === 'automatico') wrapper.append(element('p', 'Publicada após conferência automática. A extração pode conter erros.', 'muted'));
+  if (q.review_method === 'ia_extracao') wrapper.append(element('p', 'Extraída automaticamente por IA; pode conter erros.', 'muted'));
   const sourceLink = element('a', 'Consultar página da prova original ↗', 'source-link'); sourceLink.href = `/api/documents/${encodeURIComponent(q.document_id)}/pdf#page=${encodeURIComponent(q.page)}`; sourceLink.target = '_blank'; sourceLink.rel = 'noopener noreferrer'; wrapper.append(sourceLink);
   if (q.context_page && q.context_page !== q.page) { const support = element('a', 'Consultar página do texto de apoio ↗', 'source-link'); support.href = `/api/documents/${encodeURIComponent(q.document_id)}/pdf#page=${encodeURIComponent(q.context_page)}`; support.target = '_blank'; support.rel = 'noopener noreferrer'; wrapper.append(support); }
-  const previewPage = q.illustration?.page || q.context_page || q.page;
+  const visual = q.visual_assets || {};
+  for (let i = 0; i < (visual.question || []).length; i++) {
+    const image = element('img'); image.src = `/api/questions/${encodeURIComponent(q.id)}/assets/question/${i}.png`; image.alt = `Imagem extraída da questão ${q.number}`; image.loading = 'lazy'; wrapper.append(image);
+  }
+  if (q.illustration) { const illustration = element('img'); illustration.src = q.illustration.url; illustration.alt = `Ilustração da questão ${q.number}`; illustration.loading = 'lazy'; wrapper.append(illustration); }
+  const previewPage = q.page;
   const figure = element('figure', undefined, 'page-preview');
-  const img = element('img'); img.src = q.illustration ? q.illustration.url : `/api/documents/${encodeURIComponent(q.document_id)}/pages/${encodeURIComponent(previewPage)}.png`; img.alt = q.illustration ? `Charge da questão ${q.number}, recortada da página ${previewPage} da prova original` : `Página ${previewPage} da prova original, incluindo imagens e texto de apoio`; img.loading = 'lazy';
-  const expand = element('a', q.illustration ? 'Ampliar charge ↗' : 'Ampliar página ↗', 'source-link'); expand.href = img.src; expand.target = '_blank'; expand.rel = 'noopener noreferrer';
-  const caption = element('figcaption', q.illustration ? `Charge da página ${previewPage} da prova original. ` : `Página ${previewPage} da prova original. Para imagens e charges, consulte a página completa. `); caption.append(expand);
-  img.addEventListener('error', () => { img.hidden = true; caption.textContent = 'Não foi possível mostrar a página. Use o link para consultar o PDF original.'; });
+  const img = element('img'); img.src = `/api/questions/${encodeURIComponent(q.id)}/excerpt.png`; img.alt = `Recorte da questão ${q.number} na página ${previewPage} da prova original`; img.loading = 'lazy';
+  const expand = element('a', 'Ampliar recorte ↗', 'source-link'); expand.href = img.src; expand.target = '_blank'; expand.rel = 'noopener noreferrer';
+  const caption = element('figcaption', `Recorte automático da questão, página ${previewPage}. `); caption.append(expand);
+  img.addEventListener('error', () => { figure.hidden = true; });
   figure.append(img, caption); wrapper.append(figure);
   if (q.context) wrapper.append(element('div', q.context, 'question-context'));
   wrapper.append(element('p', q.prompt));
   const form = element('form'); const options = element('div', undefined, 'options');
   (q.options || []).forEach((option, index) => {
     const label = element('label', undefined, 'option'); const radio = element('input'); radio.type = 'radio'; radio.name = 'selected'; radio.value = String(index); radio.required = true;
-    label.append(radio, element('span', `${String.fromCharCode(65 + index)}. ${option}`)); options.append(label);
+    label.append(radio, element('span', `${String.fromCharCode(65 + index)}. ${option}`));
+    if (visual.options?.[index]) { const image = element('img'); image.src = `/api/questions/${encodeURIComponent(q.id)}/assets/option/${index}.png`; image.alt = `Imagem da alternativa ${String.fromCharCode(65 + index)}`; image.loading = 'lazy'; label.append(image); }
+    options.append(label);
   });
   form.append(options); const submit = element('button', 'Responder', 'primary'); submit.type = 'submit'; form.append(submit);
   const result = element('div'); result.setAttribute('role','status');
@@ -291,15 +383,132 @@ function renderQuestion() {
 }
 $('#subject-filter').addEventListener('change', event => { state.subject = event.target.value; state.currentQuestion = 0; renderQuestion(); });
 async function refresh() {
-  const [documents, questions, attempts, settings] = await Promise.all([api('/api/documents'), api('/api/questions'), api('/api/attempts'), api('/api/settings')]);
-  state.documents = documents; state.questions = questions; state.attempts = attempts; state.settings = settings; renderDashboard(); renderImports();
+  const [documents, questions, attempts, settings, jobs] = await Promise.all([api('/api/documents'), api('/api/questions'), api('/api/attempts'), api('/api/settings'), api('/api/import-jobs')]);
+  state.documents = documents; state.questions = questions; state.attempts = attempts; state.settings = settings; state.jobs = jobs; renderDashboard(); renderImports();
 }
 document.addEventListener('click', event => { const button = event.target.closest('[data-view], [data-go]'); if (button) showView(button.dataset.view || button.dataset.go); });
+let activeSimulation = null;
+let simulationIndex = 0;
+let simulationOffset = 0;
+let simulationRefreshing = false;
+
+async function loadSimulations() {
+  const items = await api('/api/simulations');
+  const list = $('#simulation-list'); list.replaceChildren();
+  if (!items.length) list.append(element('p', 'Nenhum simulado criado.', 'muted'));
+  for (const item of items) {
+    const row = element('div', undefined, 'file-row');
+    const info = element('div'); info.append(element('strong', `Simulado ${item.id}`), element('small', `${item.questions.length} questões · ${item.status === 'em_andamento' ? 'Em andamento' : 'Finalizado'}`));
+    const open = element('button', item.status === 'em_andamento' ? 'Retomar' : 'Ver resultado', 'secondary'); open.type = 'button'; open.addEventListener('click', () => openSimulation(item.id));
+    row.append(info, open); list.append(row);
+  }
+  const select = $('#simulation-subject'); const previous = select.value; select.replaceChildren();
+  const all = element('option', 'Todas as matérias'); all.value = ''; select.append(all);
+  for (const subject of [...new Set(state.questions.map(q => q.subject).filter(Boolean))].sort((a,b) => a.localeCompare(b,'pt-BR'))) { const option = element('option', subject); option.value = subject; select.append(option); }
+  select.value = previous;
+}
+
+async function openSimulation(id, preserveIndex = false) {
+  try {
+    activeSimulation = await api(`/api/simulations/${encodeURIComponent(id)}`);
+    simulationOffset = Date.parse(activeSimulation.server_now) - Date.now();
+    if (!preserveIndex) simulationIndex = 0;
+    renderSimulation(); await loadSimulations();
+  } catch (error) { notice(error.message, true); }
+}
+
+function renderSimulation() {
+  const target = $('#simulation-content'); target.replaceChildren();
+  if (!activeSimulation) return;
+  const sim = activeSimulation; const finished = sim.status === 'finalizado';
+  const card = element('article', undefined, 'card simulation-card');
+  card.append(element('h3', `Simulado ${sim.id}`));
+  const timer = element('p', '', 'muted'); timer.id = 'simulation-timer'; card.append(timer);
+  if (finished) {
+    const r = sim.result;
+    card.append(element('p', `Resultado: ${r.acertos} ${r.acertos === 1 ? 'acerto' : 'acertos'} · ${r.erros} ${r.erros === 1 ? 'erro' : 'erros'} · ${r.sem_gabarito} sem gabarito · ${r.nao_respondidas} não respondidas.`));
+  }
+  simulationIndex = Math.max(0, Math.min(simulationIndex, sim.questions.length - 1));
+  const q = sim.questions[simulationIndex];
+  if (!q) { target.append(card); return; }
+  const answered = sim.questions.filter(item => item.selected !== null && item.selected !== undefined).length;
+  card.append(element('p', `Questão ${simulationIndex + 1} de ${sim.questions.length} · ${answered} ${answered === 1 ? 'respondida' : 'respondidas'} · ${q.subject}`, 'muted'));
+  if (q.context) card.append(element('div', q.context, 'question-context'));
+  card.append(element('p', q.prompt));
+  const visual = q.visual_assets || {};
+  const original = state.questions.find(item => item.id === q.id);
+  if (original?.illustration) { const image = element('img', undefined, 'simulation-image'); image.src = original.illustration.url; image.alt = `Ilustração da questão ${q.number}`; card.append(image); }
+  for (let i=0; i<(visual.question || []).length; i++) { const image = element('img', undefined, 'simulation-image'); image.src = `/api/questions/${encodeURIComponent(q.id)}/assets/question/${i}.png`; image.alt = `Imagem da questão ${q.number}`; card.append(image); }
+  const options = element('div', undefined, 'options');
+  (q.options || []).forEach((option,index) => {
+    const label = element('label', undefined, 'option'); const radio = element('input'); radio.type = 'radio'; radio.name = 'simulation-answer'; radio.value = String(index); radio.checked = q.selected === index; radio.disabled = finished;
+    label.append(radio, element('span', `${String.fromCharCode(65+index)}. ${option}`));
+    if (visual.options?.[index]) { const image = element('img'); image.src = `/api/questions/${encodeURIComponent(q.id)}/assets/option/${index}.png`; image.alt = `Imagem da alternativa ${String.fromCharCode(65+index)}`; label.append(image); }
+    radio.addEventListener('change', async () => {
+      for (const input of options.querySelectorAll('input')) input.disabled = true;
+      try { activeSimulation = await api(`/api/simulations/${encodeURIComponent(sim.id)}/answer`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question_id:q.id,selected:index})}); simulationOffset = Date.parse(activeSimulation.server_now)-Date.now(); renderSimulation(); }
+      catch (error) { notice(error.message, true); await openSimulation(sim.id, true); }
+    });
+    options.append(label);
+  });
+  card.append(options);
+  if (!finished && q.selected !== null && q.selected !== undefined) {
+    const clear = element('button','Limpar resposta','secondary'); clear.type='button';
+    clear.addEventListener('click',async()=>{clear.disabled=true;try {activeSimulation=await api(`/api/simulations/${encodeURIComponent(sim.id)}/answer`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question_id:q.id,selected:null})}); simulationOffset=Date.parse(activeSimulation.server_now)-Date.now();renderSimulation();} catch(error){notice(error.message,true);await openSimulation(sim.id,true);} }); card.append(clear);
+  }
+  if (finished) {
+    let message = q.selected === null || q.selected === undefined ? 'Não respondida.' : q.answer === null ? 'Resposta registrada; questão sem gabarito confirmado.' : q.correct ? 'Resposta correta.' : 'Resposta incorreta.';
+    if (q.answer !== null && q.answer !== undefined) message += ` Gabarito: ${String.fromCharCode(65+q.answer)}.${q.answer_source ? ` Fonte: ${q.answer_source}` : ''}`;
+    card.append(element('p', message, 'result'));
+  }
+  const controls = element('div', undefined, 'study-controls');
+  const prev = element('button', '← Anterior', 'secondary'); prev.type='button'; prev.disabled=simulationIndex===0; prev.addEventListener('click',()=>{simulationIndex--;renderSimulation();});
+  const next = element('button', 'Próxima →', 'secondary'); next.type='button'; next.disabled=simulationIndex===sim.questions.length-1; next.addEventListener('click',()=>{simulationIndex++;renderSimulation();});
+  controls.append(prev,next);
+  if (!finished) {
+    const finish = element('button', 'Finalizar simulado', 'primary'); finish.type='button';
+    finish.addEventListener('click',async()=>{finish.disabled=true;try { activeSimulation=await api(`/api/simulations/${encodeURIComponent(sim.id)}/finish`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});renderSimulation();await loadSimulations(); } catch(error){notice(error.message,true);finish.disabled=false;} }); controls.append(finish);
+  }
+  card.append(controls); target.append(card); updateSimulationTimer();
+}
+
+function updateSimulationTimer() {
+  const timer = $('#simulation-timer'); if (!timer || !activeSimulation) return;
+  if (activeSimulation.status === 'finalizado') { timer.textContent = 'Simulado finalizado.'; return; }
+  const seconds = Math.max(0, Math.ceil((Date.parse(activeSimulation.deadline) - (Date.now()+simulationOffset))/1000));
+  timer.textContent = `Tempo restante: ${String(Math.floor(seconds/3600)).padStart(2,'0')}:${String(Math.floor(seconds%3600/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
+  if (!seconds && !simulationRefreshing) { simulationRefreshing=true; openSimulation(activeSimulation.id,true).finally(()=>{simulationRefreshing=false;}); }
+}
+setInterval(updateSimulationTimer, 1000);
+
+$('#simulation-form').addEventListener('submit', async event => {
+  event.preventDefault(); const button = event.currentTarget.querySelector('button'); button.disabled=true;
+  try { const sim = await api('/api/simulations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quantidade:Number($('#simulation-count').value),duracao_minutos:Number($('#simulation-duration').value),materia:$('#simulation-subject').value})}); activeSimulation=sim; simulationOffset=Date.parse(sim.server_now)-Date.now();simulationIndex=0;renderSimulation();await loadSimulations();notice('Simulado iniciado.'); }
+  catch(error){notice(error.message,true);} finally {button.disabled=false;}
+});
+
 $('#upload-form').addEventListener('submit', async event => {
   event.preventDefault(); const file = $('#pdf').files[0]; if (!file) return;
   if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') { notice('Selecione um arquivo PDF.', true); return; }
   const form = event.currentTarget; const submit = form.querySelector('button'); submit.disabled = true; notice('Enviando e preparando documento. Páginas digitalizadas podem levar mais tempo…');
-  try { const doc = await api('/api/documents', {method:'POST',headers:{'Content-Type':'application/pdf','X-Filename':encodeURIComponent(file.name),'X-Enable-OCR': $('#enable-ocr').checked ? 'true' : 'false'},body:file}); form.reset(); await refresh(); notice('Documento recebido. Revise o conteúdo antes de estudar.'); await openReview(doc.id); }
+  try { const doc = await api('/api/documents', {method:'POST',headers:{'Content-Type':'application/pdf','X-Filename':encodeURIComponent(file.name),'X-Auto-Extract':'true'},body:file}); form.reset(); await refresh(); notice('Documento recebido. A extração com IA começou.'); monitorImport(doc.id); }
   catch(error) { notice(error.message, true); } finally { submit.disabled = false; }
 });
+async function monitorImport(id) {
+  const progress = $('#import-progress');
+  try {
+    const job = await api(`/api/documents/${encodeURIComponent(id)}/import-job`);
+    progress.textContent = `Extração: ${job.done} de ${job.total} páginas. ${job.error || ''}`;
+    if (job.status === 'processando') { setTimeout(() => monitorImport(id), 3000); return; }
+    await refresh();
+    notice(job.status === 'concluido' ? 'Extração concluída. As questões estão disponíveis para estudo.' : `Extração ${job.status}. ${job.error || ''}`, job.status !== 'concluido');
+  } catch (error) { progress.textContent = `Não foi possível acompanhar a importação: ${error.message}`; }
+}
+$('#answer-key-form').addEventListener('submit', async event => {
+  event.preventDefault(); const file = $('#answer-key-pdf').files[0]; if (!file) return;
+  const button = event.currentTarget.querySelector('button'); button.disabled = true;
+  try { const doc = await api('/api/documents', {method:'POST', headers:{'Content-Type':'application/pdf','X-Filename':encodeURIComponent(file.name),'X-Document-Kind':'gabarito'}, body:file}); event.currentTarget.reset(); await refresh(); await showAnswerKey(doc.id); notice('Gabarito recebido para análise.'); }
+  catch (error) { notice(error.message, true); } finally { button.disabled = false; }
+});
 refresh().catch(error => notice(`Não foi possível carregar os dados: ${error.message}`, true));
+setInterval(() => { if (state.jobs.some(job => job.status === 'processando')) refresh().catch(() => {}); }, 5000);

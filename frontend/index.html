@@ -14,6 +14,7 @@
       <nav aria-label="Navegação principal">
         <button class="nav active" data-view="dashboard"><span aria-hidden="true">⌂</span> Dashboard</button>
         <button class="nav" data-view="questions"><span aria-hidden="true">▤</span> Questões</button>
+        <button class="nav" data-view="simulations"><span aria-hidden="true">◷</span> Simulados</button>
         <button class="nav" data-view="imports"><span aria-hidden="true">⇧</span> Importações</button>
         <button class="nav" data-view="settings"><span aria-hidden="true">⚙</span> Configurações</button>
       </nav>
@@ -25,7 +26,7 @@
       <section id="dashboard" class="view" aria-labelledby="dashboard-title">
         <div class="section-heading"><div><p class="eyebrow">Visão geral</p><h2 id="dashboard-title">Seu painel de estudos</h2></div></div>
         <div class="metrics">
-          <article class="metric"><span class="metric-icon blue" aria-hidden="true">▤</span><div><p>Questões disponíveis</p><strong id="metric-questions">—</strong><small>revisadas e prontas para estudo</small></div></article>
+          <article class="metric"><span class="metric-icon blue" aria-hidden="true">▤</span><div><p>Questões disponíveis</p><strong id="metric-questions">—</strong><small>disponíveis para estudo</small></div></article>
           <article class="metric"><span class="metric-icon green" aria-hidden="true">✓</span><div><p>Questões respondidas</p><strong id="metric-attempts">—</strong><small>tentativas registradas</small></div></article>
           <article class="metric"><span class="metric-icon violet" aria-hidden="true">◔</span><div><p>Aproveitamento</p><strong id="metric-accuracy">—</strong><small>com base nas respostas registradas</small></div></article>
         </div>
@@ -37,12 +38,24 @@
         </div>
       </section>
       <section id="questions" class="view" aria-labelledby="questions-title" hidden>
-        <div class="section-heading"><div><p class="eyebrow">Prática</p><h2 id="questions-title">Questões</h2><p class="muted">Responda questões revisadas e acompanhe seu progresso.</p></div><button class="secondary" data-go="imports">Importar PDF</button></div>
+        <div class="section-heading"><div><p class="eyebrow">Prática</p><h2 id="questions-title">Questões</h2><p class="muted">Responda questões e acompanhe seu progresso. Itens extraídos por IA podem conter erros.</p></div><button class="secondary" data-go="imports">Importar PDF</button></div>
         <div class="study-layout"><aside class="card study-sidebar"><h3>Seu percurso</h3><label for="subject-filter">Filtrar por matéria</label><select id="subject-filter"><option value="">Todas as matérias</option></select><p id="study-count" class="muted"></p><div id="question-list" class="question-list"></div></aside><div id="question-content" class="card"><p class="muted">Carregando questões…</p></div></div>
       </section>
+      <section id="simulations" class="view" aria-labelledby="simulations-title" hidden>
+        <div class="section-heading"><div><p class="eyebrow">Prática com tempo</p><h2 id="simulations-title">Simulados</h2><p class="muted">Monte um simulado com suas questões e acompanhe o tempo.</p></div></div>
+        <div class="imports-grid"><article class="card"><h3>Novo simulado</h3>
+          <form id="simulation-form"><label for="simulation-subject">Matéria</label><select id="simulation-subject"><option value="">Todas as matérias</option></select>
+          <label for="simulation-count">Quantidade de questões</label><input id="simulation-count" type="number" min="1" max="200" value="10" required>
+          <label for="simulation-duration">Duração em minutos</label><input id="simulation-duration" type="number" min="1" max="600" value="60" required>
+          <p class="field-note">Questões são sorteadas entre as disponíveis. O tempo continua enquanto a página estiver fechada.</p><button class="primary" type="submit">Iniciar simulado</button></form>
+        </article><article class="card"><h3>Seus simulados</h3><div id="simulation-list" class="empty">Nenhum simulado criado.</div></article></div>
+        <div id="simulation-content"></div>
+      </section>
       <section id="imports" class="view" aria-labelledby="imports-title" hidden>
-        <div class="section-heading"><div><p class="eyebrow">Sua biblioteca</p><h2 id="imports-title">Importar e revisar</h2><p class="muted">Adicione uma prova e confira os dados extraídos antes de usá-los.</p></div></div>
-        <div class="imports-grid"><article class="card"><h3>Adicionar documento</h3><p class="muted">Selecione um PDF de prova. A extração precisa de revisão antes da publicação.</p><form id="upload-form"><label for="pdf">Arquivo PDF</label><input id="pdf" name="file" type="file" accept="application/pdf,.pdf" required><label class="ocr-consent"><input id="enable-ocr" type="checkbox"><span>Usar OCR da OpenAI em páginas digitalizadas sem texto. Requer ativação e configuração no servidor. As imagens dessas páginas serão enviadas à OpenAI e podem gerar custos.</span></label><button class="primary" type="submit">Enviar PDF</button></form></article><article class="card"><h3>Documentos importados</h3><div id="import-list" class="empty">Carregando documentos…</div></article></div>
+        <div class="section-heading"><div><p class="eyebrow">Sua biblioteca</p><h2 id="imports-title">Importar provas</h2><p class="muted">Adicione uma prova para extrair suas questões automaticamente.</p></div></div>
+        <article class="card"><h3>Buscar provas na internet</h3><p class="muted">A Vunesp pode exigir acesso à área do candidato. O EstudaTJ não consegue verificar automaticamente se você está conectado no site da Vunesp; entre diretamente no site e procure a prova desejada.</p><a class="secondary source-link" href="https://www.vunesp.com.br/Conta/Login?ReturnUrl=%2fCandidato" target="_blank" rel="noopener noreferrer">Entrar na Vunesp ↗</a><p class="field-note">O login no navegador não conecta automaticamente o servidor do EstudaTJ. Se a busca automática falhar, baixe o PDF na Vunesp e envie-o abaixo. A compatibilidade do gabarito deve ser conferida antes de usar.</p><div id="online-catalog">Carregando catálogo…</div></article>
+        <div class="imports-grid"><article class="card"><h3>Adicionar documento</h3><p class="muted">Ao enviar o PDF, as páginas serão enviadas à DeepSeek para extrair questões e imagens automaticamente. Isso pode gerar custos e os resultados podem conter erros.</p><form id="upload-form"><label for="pdf">Arquivo PDF</label><input id="pdf" name="file" type="file" accept="application/pdf,.pdf" required><button class="primary" type="submit">Importar com IA</button></form><p id="import-progress" role="status" class="field-note"></p></article><article class="card"><h3>Documentos importados</h3><div id="import-list" class="empty">Carregando documentos…</div></article></div>
+        <article class="card"><h3>Adicionar gabarito</h3><p class="muted">Envie o PDF do gabarito para identificar as versões. A correção permanece indisponível até confirmar a correspondência com a prova.</p><form id="answer-key-form"><label for="answer-key-pdf">Arquivo PDF do gabarito</label><input id="answer-key-pdf" type="file" accept="application/pdf,.pdf" required><button class="primary" type="submit">Enviar gabarito</button></form><div id="answer-key-result"></div></article>
         <div id="review-content"></div>
       </section>
       <section id="settings" class="view" aria-labelledby="settings-title" hidden>
