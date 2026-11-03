@@ -1,12 +1,23 @@
 # EstudaTJ — planejamento
 
-Projeto privado de estudos para Escrevente Técnico Judiciário do TJ-SP. A versão local identifica candidatos a questões em PDFs, para revisão e publicação, permite cadastro manual, prática por matéria e acompanhamento básico. Páginas digitalizadas podem passar por OCR com a API OpenAI, mediante configuração e escolha explícita no envio; veja `backend/README.md`. A extração é heurística; simulados e tutoria IA ainda não foram implementados.
+Projeto privado de estudos para Escrevente Técnico Judiciário do TJ-SP. A versão local importa questões de PDFs, permite prática por matéria, simulados com tempo, acompanhamento básico e tutoria DeepSeek. A extração por IA é aproximada e pode conter erros. A associação automática de gabaritos continua pendente; veja `backend/README.md`.
 
 ## Executar localmente
 
 Com Python 3 e `pdftotext` instalados, execute `python3 backend/server.py` na raiz e abra `http://127.0.0.1:8000/`. O servidor escuta somente no próprio computador e não possui autenticação: não o exponha à rede. Os dados ficam em `backend/data/`; detalhes e limitações estão em `backend/README.md`.
 
 Para testar: `python3 -m unittest discover -s backend -v`.
+
+## Executar com Docker
+
+Construa a imagem na raiz do projeto:
+
+```sh
+docker build -t estudatj:local .
+docker run -d --name estudatj -p 127.0.0.1:8001:8000 -v estudatj_data:/data estudatj:local
+```
+
+Abra `http://127.0.0.1:8001/`. O volume nomeado mantém os dados entre reinícios e é separado dos dados da execução fora do Docker. A aplicação ainda não tem autenticação; mantenha o endereço publicado em `127.0.0.1` e não exponha o contêiner à rede. A chave DeepSeek fica apenas na memória e precisa ser informada novamente após reiniciar. Para parar, use `docker stop estudatj`; para iniciar novamente, `docker start estudatj`.
 
 ## Comece aqui
 1. Abra a pasta `EstudaTJ` como projeto no Codex e confira se a pasta `.codex` foi incluída (é oculta em alguns sistemas). Confie no projeto apenas após revisar seus arquivos.
